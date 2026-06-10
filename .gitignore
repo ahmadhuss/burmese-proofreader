@@ -2,6 +2,7 @@
 .claude
 .vscode
 **/node_modules
+node_modules/
 dist/
 temp/
 coverage/
@@ -9,5 +10,15 @@ coverage/
 !.env.example
 **/**/*.log
 CLAUDE.md
-spec.md
-node_modules/
+AGENTS.md
+
+# Next.js
+apps/web/.next/
+
+# SQLite
+apps/api/prisma/*.db
+apps/api/prisma/*.db-journal
+
+# Generated outputs / uploads (local storage)
+uploads/
+outputs/
