@@ -1,0 +1,54 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model BookJob {
+  id              String      @id @default(cuid())
+  fileName        String
+  filePath        String
+  fileType        String?
+  status          String      @default("UPLOADED")
+
+  totalChunks     Int         @default(0)
+  completedChunks Int         @default(0)
+  failedChunks    Int         @default(0)
+
+  modelName       String      @default("deepseek-v4-flash")
+  thinkingEnabled Boolean     @default(false)
+  reasoningEffort String      @default("high")
+
+  outputTxtPath   String?
+  outputDocxPath  String?
+  warningSummary  String?
+  errorMessage    String?
+  processingLog   String?
+
+  chunks          BookChunk[]
+
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+}
+
+model BookChunk {
+  id            String   @id @default(cuid())
+  jobId         String
+  chunkIndex    Int
+  chapterTitle  String?
+  originalText  String
+  correctedText String?
+  status        String   @default("PENDING")
+  retryCount    Int      @default(0)
+  errorMessage  String?
+
+  job           BookJob  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([jobId, chunkIndex])
+}

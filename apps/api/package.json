@@ -1,0 +1,35 @@
+{
+  "name": "api",
+  "version": "1.0.0",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "nodemon src/server.js",
+    "worker": "nodemon src/queues/book.worker.js",
+    "start": "node src/server.js",
+    "start:worker": "node src/queues/book.worker.js",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:studio": "prisma studio",
+    "prisma:reset": "prisma migrate reset --force"
+  },
+  "dependencies": {
+    "@bull-board/api": "^7.2.1",
+    "@bull-board/express": "^7.2.1",
+    "@prisma/client": "^5",
+    "bullmq": "latest",
+    "cors": "latest",
+    "docx": "latest",
+    "dotenv": "latest",
+    "express": "latest",
+    "helmet": "^8.2.0",
+    "ioredis": "latest",
+    "mammoth": "latest",
+    "multer": "latest",
+    "openai": "latest",
+    "pdf-parse": "1.1.1",
+    "prisma": "^5",
+    "prompts": "workspace:*"
+  },
+  "devDependencies": {
+    "nodemon": "latest"
+  }
+}
