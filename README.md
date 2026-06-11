@@ -17,7 +17,7 @@ The user cannot choose or change AI settings from the browser. Model, token limi
 | Background jobs | BullMQ |
 | Database | Prisma with SQLite |
 | Queue storage | Redis |
-| AI provider | DeepSeek API using OpenAI-compatible SDK |
+| AI provider | DeepSeek using OpenAI-compatible SDK |
 | Package manager | pnpm workspaces |
 | Production process manager | PM2 |
 
@@ -150,7 +150,7 @@ Local URLs:
 4. The job is added to the Redis/BullMQ queue.
 5. The worker extracts plain text from the file.
 6. The text is normalized and split into chunks.
-7. Each chunk is corrected by DeepSeek using strict tool calls.
+7. Each chunk is corrected by LLM using strict tool calls.
 8. Each corrected chunk is saved as soon as it finishes.
 9. A warning scan checks for political, adult/sexual, and BL content.
 10. The worker creates `final.txt` and `final.docx` in `outputs/{jobId}/`.
