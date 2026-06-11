@@ -1,6 +1,6 @@
-﻿# Burmese Book Editor
+﻿# Burmese Proof Reader
 
-Burmese Book Editor is a web app for correcting Burmese books with DeepSeek AI.
+Burmese Proof Reader is a web app for correcting Burmese books with LLM.
 
 Users upload a `.docx`, `.pdf`, or `.txt` file. The backend extracts the text, splits the book into safe chunks, corrects each chunk with DeepSeek, scans for content warnings, and creates downloadable `.txt` and `.docx` files.
 
