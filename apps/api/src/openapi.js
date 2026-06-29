@@ -1,6 +1,11 @@
 const { buildGeneratedComponents } = require("./openapi-components");
 
-const API_BASE_URL = process.env.PUBLIC_API_BASE_URL || `http://localhost:${process.env.PORT || 5556}`;
+function publicApiBaseUrl() {
+  const raw = process.env.PUBLIC_API_BASE_URL || `http://localhost:${process.env.PORT || 5556}`;
+  return raw.replace(/\/+$/, "").replace(/\/api$/i, "");
+}
+
+const API_BASE_URL = publicApiBaseUrl();
 const generatedComponents = buildGeneratedComponents();
 
 const openapiSpec = {
