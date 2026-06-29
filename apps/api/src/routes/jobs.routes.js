@@ -4,6 +4,17 @@ const prisma = require("../db/prisma");
 const { addBookJob, bookQueue } = require("../queues/book.queue");
 const { resolveUploadDir, resolveOutputDir } = require("../utils/file");
 const logger = require("../utils/logger");
+const { sendJson, validate } = require("../validation/middleware");
+const { jobParamsSchema } = require("../validation/schemas");
+const {
+  jobPreviewSchema,
+  jobResultSchema,
+  jobsListResponseSchema,
+  jobStatusSchema,
+  messageResponseSchema,
+  pendingResultSchema,
+  retryResponseSchema
+} = require("../validation/response-schemas");
 
 const router = express.Router();
 
@@ -24,12 +35,12 @@ router.get("/", async (req, res) => {
       updatedAt: true
     }
   });
-  res.json({
+  sendJson(res, jobsListResponseSchema, {
     jobs: jobs.map(j => ({
       ...j,
       warningSummary: j.warningSummary ? JSON.parse(j.warningSummary) : null
     }))
-  });
+  }, "jobs list response");
 });
 
 router.delete("/", async (req, res) => {
@@ -55,21 +66,21 @@ router.delete("/", async (req, res) => {
     fs.mkdirSync(outputDir, { recursive: true });
 
     logger.info("All data cleared");
-    res.json({ message: "All data cleared" });
+    sendJson(res, messageResponseSchema, { message: "All data cleared" }, "clear data response");
   } catch (err) {
     logger.error("Clear all failed", { error: err.message });
     res.status(500).json({ error: "Failed to clear data" });
   }
 });
 
-router.get("/:jobId", async (req, res) => {
+router.get("/:jobId", validate("params", jobParamsSchema), async (req, res) => {
   const { jobId } = req.params;
   const job = await prisma.bookJob.findUnique({ where: { id: jobId } });
   if (!job) return res.status(404).json({ error: "Job not found" });
 
   const progressPercent = job.totalChunks > 0 ? Math.round((job.completedChunks / job.totalChunks) * 100) : 0;
 
-  res.json({
+  sendJson(res, jobStatusSchema, {
     id: job.id,
     status: job.status,
     fileName: job.fileName,
@@ -80,30 +91,36 @@ router.get("/:jobId", async (req, res) => {
     progressPercent,
     errorMessage: job.errorMessage,
     processingLog: job.processingLog ? JSON.parse(job.processingLog) : []
-  });
+  }, "job status response");
 });
 
-router.get("/:jobId/result", async (req, res) => {
+router.get("/:jobId/result", validate("params", jobParamsSchema), async (req, res) => {
   const { jobId } = req.params;
   const job = await prisma.bookJob.findUnique({ where: { id: jobId } });
   if (!job) return res.status(404).json({ error: "Job not found" });
 
   const DONE_STATUSES = ["COMPLETED", "PARTIALLY_COMPLETED"];
   if (!DONE_STATUSES.includes(job.status)) {
-    return res.status(202).json({ status: job.status, message: "Job not yet complete" });
+    return sendJson(res.status(202), pendingResultSchema, { status: job.status, message: "Job not yet complete" }, "pending result response");
   }
 
-  const warningSummary = job.warningSummary ? JSON.parse(job.warningSummary) : { political: false, adultSexual: false, bl: false, notes: [] };
+  const warningSummary = job.warningSummary
+    ? JSON.parse(job.warningSummary)
+    : {
+        political: { found: false, severity: "none", notes: [] },
+        adultSexual: { found: false, severity: "none", notes: [] },
+        bl: { found: false, severity: "none", notes: [] }
+      };
 
-  res.json({
+  sendJson(res, jobResultSchema, {
     status: job.status,
     outputTxtUrl: `/api/files/${jobId}/final.txt`,
     outputDocxUrl: `/api/files/${jobId}/final.docx`,
     warningSummary
-  });
+  }, "job result response");
 });
 
-router.get("/:jobId/preview", async (req, res) => {
+router.get("/:jobId/preview", validate("params", jobParamsSchema), async (req, res) => {
   const { jobId } = req.params;
   const job = await prisma.bookJob.findUnique({ where: { id: jobId }, select: { id: true, status: true, totalChunks: true, completedChunks: true } });
   if (!job) return res.status(404).json({ error: "Job not found" });
@@ -114,15 +131,15 @@ router.get("/:jobId/preview", async (req, res) => {
     select: { chunkIndex: true, chapterTitle: true, correctedText: true }
   });
 
-  res.json({
+  sendJson(res, jobPreviewSchema, {
     status: job.status,
     totalChunks: job.totalChunks,
     completedChunks: job.completedChunks,
     chunks
-  });
+  }, "job preview response");
 });
 
-router.post("/:jobId/retry", async (req, res) => {
+router.post("/:jobId/retry", validate("params", jobParamsSchema), async (req, res) => {
   const { jobId } = req.params;
   const job = await prisma.bookJob.findUnique({ where: { id: jobId } });
   if (!job) return res.status(404).json({ error: "Job not found" });
@@ -141,7 +158,7 @@ router.post("/:jobId/retry", async (req, res) => {
   await addBookJob(jobId);
   logger.info("Retry started", { jobId });
 
-  res.json({ message: "Retry started", jobId });
+  sendJson(res, retryResponseSchema, { message: "Retry started", jobId }, "retry response");
 });
 
 module.exports = router;

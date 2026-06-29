@@ -2,10 +2,12 @@ const express = require("express");
 const path = require("path");
 const fs = require("fs");
 const { resolveOutputDir } = require("../utils/file");
+const { validate } = require("../validation/middleware");
+const { fileParamsSchema } = require("../validation/schemas");
 
 const router = express.Router();
 
-router.get("/:jobId/:filename", (req, res) => {
+router.get("/:jobId/:filename", validate("params", fileParamsSchema), (req, res) => {
   const { jobId, filename } = req.params;
 
   const safeJobId = path.basename(jobId);

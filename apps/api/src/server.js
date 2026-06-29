@@ -1,6 +1,7 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+const compression = require("compression");
 const helmet = require("helmet");
 const logger = require("./utils/logger");
 
@@ -8,12 +9,16 @@ const { createBullBoard } = require("@bull-board/api");
 const { BullMQAdapter } = require("@bull-board/api/bullMQAdapter");
 const { ExpressAdapter } = require("@bull-board/express");
 const { bookQueue } = require("./queues/book.queue");
+const { openapiSpec } = require("./openapi");
 
 const uploadRoutes = require("./routes/upload.routes");
 const jobsRoutes = require("./routes/jobs.routes");
 const filesRoutes = require("./routes/files.routes");
+const docsRoutes = require("./routes/docs.routes");
 
 const app = express();
+// compress all responses
+app.use(compression());
 app.disable("x-powered-by");
 const PORT = process.env.PORT || 5556;
 
@@ -24,6 +29,9 @@ createBullBoard({
   queues: [new BullMQAdapter(bookQueue)],
   serverAdapter
 });
+
+app.get("/openapi.json", (req, res) => res.json(openapiSpec));
+app.use("/docs", docsRoutes);
 
 app.use(helmet());
 app.use(cors());

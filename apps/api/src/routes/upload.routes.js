@@ -1,10 +1,14 @@
 const express = require("express");
 const multer = require("multer");
 const path = require("path");
+const fs = require("fs");
 const { resolveUploadDir, ensureDir } = require("../utils/file");
 const prisma = require("../db/prisma");
 const { addBookJob } = require("../queues/book.queue");
 const logger = require("../utils/logger");
+const { sendJson, validate } = require("../validation/middleware");
+const { uploadHeadersSchema } = require("../validation/schemas");
+const { uploadDryRunResponseSchema, uploadResponseSchema } = require("../validation/response-schemas");
 
 const router = express.Router();
 
@@ -36,13 +40,36 @@ const upload = multer({
   }
 });
 
+function isDocsDryRun(req) {
+  return req.get("X-Docs-Dry-Run") === "true";
+}
+
 // Creates the book job, then hands it to the background worker.
-router.post("/", upload.single("file"), async (req, res) => {
+router.post("/", validate("headers", uploadHeadersSchema), upload.single("file"), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: "No file uploaded" });
   }
 
   const ext = path.extname(req.file.originalname).toLowerCase().replace(".", "");
+
+  if (isDocsDryRun(req)) {
+    try {
+      if (req.file.path) {
+        fs.unlinkSync(req.file.path);
+      }
+    } catch (err) {
+      logger.warn("Failed to remove docs dry-run upload", { path: req.file.path, error: err.message });
+    }
+
+    logger.info("Docs dry-run upload validated without queueing job", { file: req.file.originalname });
+
+    return sendJson(res, uploadDryRunResponseSchema, {
+      jobId: "docs-dry-run",
+      status: "DRY_RUN",
+      message: "Upload validated by API docs playground. No real job was created and no processing was queued."
+    }, "upload dry-run response");
+  }
+
   // AI settings are controlled by the server, not by hidden form values from the browser.
   const modelName = process.env.DEEPSEEK_MODEL || "deepseek-v4-flash";
 
@@ -60,7 +87,7 @@ router.post("/", upload.single("file"), async (req, res) => {
     await addBookJob(bookJob.id);
     logger.info("Job created and queued", { jobId: bookJob.id, file: req.file.originalname });
 
-    res.json({ jobId: bookJob.id, status: "UPLOADED" });
+    sendJson(res, uploadResponseSchema, { jobId: bookJob.id, status: "UPLOADED" }, "upload response");
   } catch (err) {
     logger.error("Upload failed", { error: err.message });
     res.status(500).json({ error: "Failed to create job" });

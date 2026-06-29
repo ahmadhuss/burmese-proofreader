@@ -416,6 +416,13 @@ tar -czf backups/book-editor-backup-$(date +%Y-%m-%d).tar.gz apps/api/prisma/dev
 
 ## API Endpoints
 
+Interactive API documentation is available when the API is running:
+
+```txt
+http://localhost:5556/docs
+http://localhost:5556/openapi.json
+```
+
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `POST` | `/api/upload` | Upload a book and create a job |
@@ -427,6 +434,181 @@ tar -czf backups/book-editor-backup-$(date +%Y-%m-%d).tar.gz apps/api/prisma/dev
 | `GET` | `/api/files/:id/final.docx` | Download corrected Word document |
 | `POST` | `/api/jobs/:id/retry` | Retry failed chunks |
 | `DELETE` | `/api/jobs` | Clear all jobs, queue data, uploads, and outputs |
+
+---
+
+## Adding A New API Endpoint
+
+This section explains the API docs system in simple terms.
+
+Think of one endpoint like one shop counter:
+
+1. The route file is the counter where the work happens.
+2. The validation schema checks what the visitor gives you.
+3. The response schema describes what you give back.
+4. The OpenAPI file writes the public guide.
+5. Scalar shows that guide at `/docs`.
+
+### Files You Usually Touch
+
+| Need | File |
+| --- | --- |
+| Add the real Express route | `apps/api/src/routes/*.routes.js` |
+| Validate request params, headers, or body | `apps/api/src/validation/schemas.js` |
+| Describe the JSON response | `apps/api/src/validation/response-schemas.js` |
+| Register schemas for docs generation | `apps/api/src/openapi-components.js` |
+| Add the endpoint to API docs | `apps/api/src/openapi.js` |
+| Mount a brand-new route group | `apps/api/src/server.js` |
+
+Most small changes only need the route file, validation files, `openapi-components.js`, and `openapi.js`.
+
+### Simple Flow
+
+Use this checklist when adding a new endpoint.
+
+1. Add the route handler.
+
+Example:
+
+```js
+router.get("/summary", async (req, res) => {
+  const payload = { message: "API summary" };
+  sendJson(res, messageResponseSchema, payload, "summary response");
+});
+```
+
+2. If the endpoint has inputs, add a request schema.
+
+Examples of inputs:
+
+- `:jobId` in a URL
+- query strings like `?page=1`
+- headers like `X-Docs-Dry-Run`
+- JSON body fields
+
+Request schemas live here:
+
+```txt
+apps/api/src/validation/schemas.js
+```
+
+3. Add a response schema.
+
+Every JSON response should have a matching Zod schema here:
+
+```txt
+apps/api/src/validation/response-schemas.js
+```
+
+Keep descriptions simple. Write them for a new teammate, not only for the original developer.
+
+4. Register the schema for automatic docs.
+
+Add the new schema to:
+
+```txt
+apps/api/src/openapi-components.js
+```
+
+This is the bridge between Zod and OpenAPI. If a schema is not registered here, it will not appear as a reusable schema in `/openapi.json`.
+
+5. Add the endpoint to the OpenAPI paths.
+
+Add the public endpoint description here:
+
+```txt
+apps/api/src/openapi.js
+```
+
+This is where you write:
+
+- endpoint summary
+- endpoint description
+- request body docs
+- response examples
+- status codes
+
+6. Restart the API and check the docs.
+
+```bash
+pnpm --filter api start
+```
+
+Open:
+
+```txt
+http://localhost:5556/docs
+http://localhost:5556/openapi.json
+```
+
+### How Auto Docs Work
+
+The docs are partly automatic and partly hand-written.
+
+Automatic:
+
+- Zod schemas describe data shapes.
+- `openapi-components.js` turns those Zod schemas into OpenAPI schemas.
+- `/openapi.json` includes those generated schemas.
+- Scalar reads `/openapi.json` and shows the UI at `/docs`.
+
+Hand-written:
+
+- Endpoint summaries
+- Endpoint descriptions
+- Request examples
+- Response examples
+- Upload/file download explanations
+
+This is intentional. Data shapes should come from code, but human guidance should be written clearly by a developer.
+
+### Safe Response Validation
+
+Routes can use `sendJson`:
+
+```js
+sendJson(res, someResponseSchema, payload, "some response");
+```
+
+In development, this checks that the response matches the schema and logs a warning if it does not.
+
+In production, it sends the response normally so the frontend is not blocked by docs validation.
+
+### If You Add A New Route File
+
+If you create a new route file, for example:
+
+```txt
+apps/api/src/routes/reports.routes.js
+```
+
+mount it in:
+
+```txt
+apps/api/src/server.js
+```
+
+Example:
+
+```js
+const reportsRoutes = require("./routes/reports.routes");
+app.use("/api/reports", reportsRoutes);
+```
+
+Then add the same endpoint paths to `apps/api/src/openapi.js`.
+
+### Important Rule
+
+Do not only add the Express route.
+
+For every new public JSON endpoint, also add:
+
+- request validation if it accepts input
+- response schema
+- OpenAPI docs
+- example response
+
+That keeps the API, frontend, and documentation easy to trust.
 
 ---
 

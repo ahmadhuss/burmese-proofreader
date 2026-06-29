@@ -12,10 +12,13 @@
     "prisma:reset": "prisma migrate reset --force"
   },
   "dependencies": {
+    "@asteasolutions/zod-to-openapi": "^8.5.0",
     "@bull-board/api": "^7.2.1",
     "@bull-board/express": "^7.2.1",
     "@prisma/client": "^5",
+    "@scalar/express-api-reference": "latest",
     "bullmq": "latest",
+    "compression": "^1.8.1",
     "cors": "latest",
     "docx": "latest",
     "dotenv": "latest",
@@ -27,7 +30,8 @@
     "openai": "latest",
     "pdf-parse": "1.1.1",
     "prisma": "^5",
-    "prompts": "workspace:*"
+    "prompts": "workspace:*",
+    "zod": "latest"
   },
   "devDependencies": {
     "nodemon": "latest"
