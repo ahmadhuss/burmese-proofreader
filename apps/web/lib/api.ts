@@ -1,7 +1,12 @@
-const BASE =
+function normalizeApiBase(value: string): string {
+  return value.replace(/\/+$/, "").replace(/\/api$/i, "");
+}
+
+const BASE = normalizeApiBase(
   typeof window === "undefined"
     ? process.env.API_INTERNAL_URL || process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5556"
-    : process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5556";
+    : process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:5556"
+);
 
 export interface LogEntry {
   ts: string;
