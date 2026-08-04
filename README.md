@@ -1,53 +1,90 @@
-﻿# Burmese Proof Reader
+# Burmese Proof Reader
 
-Burmese Proof Reader is a web app for correcting Burmese books with LLM.
+This repository contains two related products that share the same DeepSeek AI account.
 
-Users upload a `.docx`, `.pdf`, or `.txt` file. The backend extracts the text, splits the book into safe chunks, corrects each chunk with DeepSeek, scans for content warnings, and creates downloadable `.txt` and `.docx` files.
+1. Book Editor, a web app that corrects Burmese books using AI. Full details in [docs/book-editor.md](docs/book-editor.md).
+2. RAG Messenger Chatbot, a Facebook Messenger chatbot that answers customers using each client's own past conversation history. Full details in [docs/chatbot.md](docs/chatbot.md).
 
-The user cannot choose or change AI settings from the browser. Model, token limits, chunk sizes, and other processing settings are controlled on the server through environment variables.
+Both live inside one pnpm workspace so they can share code and run on one server.
+
+This page is a short overview and a quick start guide. For every environment variable, every API endpoint, and a full step by step explanation of how each app works internally, open the two documents linked above.
 
 ---
 
-## Stack
+## Table Of Contents
 
-| Part | Technology |
+* [What This Project Does](#what-this-project-does)
+* [Full Documentation](#full-documentation)
+* [Project Layout](#project-layout)
+* [Requirements](#requirements)
+* [Quick Start](#quick-start)
+* [Environment Files, Quick Reference](#environment-files-quick-reference)
+* [Production Deployment With PM2](#production-deployment-with-pm2)
+* [Updating Production](#updating-production)
+* [Reverse Proxy](#reverse-proxy)
+* [Backup Checklist](#backup-checklist)
+* [Useful Commands](#useful-commands)
+* [Troubleshooting](#troubleshooting)
+
+---
+
+## What This Project Does
+
+### Book Editor
+
+A user uploads a `.docx`, `.pdf`, or `.txt` book. The server reads the text, splits it into safe pieces, sends each piece to DeepSeek for correction, checks for sensitive content, and produces downloadable `.txt` and `.docx` files.
+
+### RAG Messenger Chatbot
+
+Instead of a rigid, menu based Facebook bot, this chatbot reads a real question, searches a company's own historical Messenger conversations for the closest matching answers, and asks DeepSeek to write a natural reply using that context. This approach is called RAG, short for Retrieval Augmented Generation. In simple words, look up the real answer first, then let the AI write it in a natural sentence.
+
+Each Facebook Page is treated as one Client in the system, and one Client's knowledge is never mixed with another Client's knowledge.
+
+---
+
+## Full Documentation
+
+| Document | Covers |
 | --- | --- |
-| Web app | Next.js, React, Tailwind CSS |
-| API | Express.js |
-| Background jobs | BullMQ |
-| Database | Prisma with SQLite |
-| Queue storage | Redis |
-| AI provider | DeepSeek using OpenAI-compatible SDK |
-| Package manager | pnpm workspaces |
-| Production process manager | PM2 |
+| [docs/book-editor.md](docs/book-editor.md) | Every environment variable, every API endpoint with copyable commands, how splitting and warning scanning work, and full troubleshooting for the Book Editor. |
+| [docs/chatbot.md](docs/chatbot.md) | Every environment variable, every API endpoint with copyable commands, the full learning and answering pipelines explained simply, connecting a real Facebook Page, loading historical conversations, and full troubleshooting for the Chatbot. |
+| [docs/rag-chatbot-plan.md](docs/rag-chatbot-plan.md) | The original design notes written before the Chatbot was built. |
 
 ---
 
 ## Project Layout
 
 ```txt
-project-folder/
+acra/
   apps/
-    api/        Express API, Prisma database, BullMQ worker
-    web/        Next.js frontend
+    api/             Book Editor backend, Express, Prisma, BullMQ worker
+    web/              Book Editor frontend, Next.js
+    chatbot/          Chatbot backend, Express, Prisma, BullMQ worker
+    embedding-svc/    Small Python service that turns text into search vectors
   packages/
-    prompts/    Shared DeepSeek prompt text
-  uploads/      Uploaded source files
-  outputs/      Generated final files
+    prompts/          Shared DeepSeek prompt text for the Book Editor
+    deepseek-client/  Shared DeepSeek connection code used by both apps
+  docs/
+    book-editor.md         Full Book Editor documentation
+    chatbot.md              Full Chatbot documentation
+    rag-chatbot-plan.md    The original design notes for the chatbot
+  uploads/            Uploaded book files
+  outputs/            Generated corrected book files
 ```
 
 ---
 
 ## Requirements
 
-Install these on the server or development machine:
+Install these once on your development machine or server:
 
-- Node.js 18 or newer
-- pnpm 9 or newer
-- Docker, used here for Redis
-- PM2, for production
+* [Node.js](https://nodejs.org/) 18 or newer
+* [pnpm](https://pnpm.io/installation) 9 or newer
+* [Docker](https://www.docker.com/) and Docker Compose, used to run Redis and Postgres
+* [Python](https://www.python.org/downloads/) 3.10 or newer, only needed for the chatbot's embedding service
+* [PM2](https://pm2.keymetrics.io/), only needed for production
 
-Install PM2 globally if it is not already installed:
+Install PM2 globally if you plan to run this in production:
 
 ```bash
 npm install -g pm2
@@ -55,46 +92,111 @@ npm install -g pm2
 
 ---
 
-## Environment Files
+## Quick Start
 
-Create this file:
+These steps get everything running on your own computer for the first time.
 
-```txt
-apps/api/.env
+### 1. Get The Code
+
+```bash
+git clone https://github.com/your-org/acra.git
+cd acra
 ```
 
-Example:
+Replace the link above with your own repository's clone link.
+
+### 2. Install Dependencies
+
+```bash
+pnpm install
+```
+
+### 3. Start Redis And Postgres
+
+Both are run inside Docker so you do not need to install them yourself.
+
+```bash
+pnpm infra
+```
+
+Check that both containers are running:
+
+```bash
+docker ps
+```
+
+You should see `book-editor-redis` and `chatbot-postgres` in the list.
+
+### 4. Set Up The Embedding Service, Chatbot Only
+
+The chatbot needs a small Python service that turns text into search vectors. This step creates its own isolated Python environment so it never conflicts with anything else on your machine.
+
+```bash
+cd apps/embedding-svc
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+cd ../..
+```
+
+On macOS or Linux, replace `venv\Scripts\activate` with `source venv/bin/activate`.
+
+### 5. Create The Environment Files
+
+See [Environment Files, Quick Reference](#environment-files-quick-reference) below for a copyable starting point, or open [docs/book-editor.md](docs/book-editor.md#environment-variables) and [docs/chatbot.md](docs/chatbot.md#environment-variables) for a full explanation of every single value.
+
+### 6. Run Database Migrations
+
+```bash
+pnpm setup
+```
+
+This creates the Book Editor's database and the Chatbot's database, including the search index tables.
+
+### 7. Start Everything
+
+```bash
+pnpm dev:all
+```
+
+This single command starts the Book Editor web app, the Book Editor API, the Book Editor worker, the Chatbot API, the Chatbot live chat worker, the Chatbot ingestion worker, and the embedding service, all at once.
+
+### 8. Open It In Your Browser
+
+| Service | Address |
+| --- | --- |
+| Book Editor web app | [http://localhost:5555](http://localhost:5555) |
+| Book Editor API docs | [http://localhost:5556/docs](http://localhost:5556/docs) |
+| Chatbot API docs | [http://localhost:5557/docs](http://localhost:5557/docs) |
+| Chatbot test chat page | [http://localhost:5557/test-chat.html](http://localhost:5557/test-chat.html) |
+
+---
+
+## Environment Files, Quick Reference
+
+Four files are needed, none of them committed to the repository since they hold secret keys. The values below are enough to run everything locally. For a full explanation of what every single variable means, see [docs/book-editor.md](docs/book-editor.md#environment-variables) and [docs/chatbot.md](docs/chatbot.md#environment-variables).
+
+`apps/api/.env`
 
 ```env
 PORT=5556
 DATABASE_URL="file:./dev.db"
-
 REDIS_HOST=localhost
 REDIS_PORT=6379
-
 DEEPSEEK_API_KEY=your_deepseek_key_here
 DEEPSEEK_BASE_URL=https://api.deepseek.com/beta
 DEEPSEEK_MODEL=deepseek-v4-flash
 DEEPSEEK_MAX_OUTPUT_TOKENS=64000
-
 UPLOAD_DIR=uploads
 OUTPUT_DIR=outputs
-
 CHUNK_CONCURRENCY=2
 MIN_CHUNK_SIZE=8000
 MAX_CHUNK_SIZE=15000
 MAX_HEADING_LENGTH=80
-CHAPTER_HEADING_PATTERNS=^á€¡á€á€”á€ºá€¸\s*[\u1040-\u10490-9]+,^á€¡á€•á€­á€¯á€„á€ºá€¸\s*[\u1040-\u10490-9]+
 MAX_FILE_SIZE_MB=100
 ```
 
-Create this file:
-
-```txt
-apps/web/.env.local
-```
-
-For local development:
+`apps/web/.env.local`
 
 ```env
 NEXT_PUBLIC_API_BASE_URL=http://localhost:5556
@@ -102,89 +204,42 @@ API_INTERNAL_URL=http://localhost:5556
 NEXT_TELEMETRY_DISABLED=1
 ```
 
-For production on one server, this can usually stay the same if a reverse proxy serves the web app and API on the same machine. If your API is on another domain, set both URLs to that API address.
+`apps/chatbot/.env`
 
----
-
-## Local Development
-
-Install dependencies:
-
-```bash
-pnpm install
+```env
+PORT=5557
+CHATBOT_DATABASE_URL="postgresql://chatbot:chatbot@localhost:5433/chatbot"
+REDIS_HOST=localhost
+REDIS_PORT=6379
+DEEPSEEK_API_KEY=your_deepseek_key_here
+DEEPSEEK_BASE_URL=https://api.deepseek.com/beta
+DEEPSEEK_MODEL=deepseek-v4-flash
+EMBEDDING_SERVICE_URL=http://localhost:5558
+EMBEDDING_SERVICE_SECRET=choose_any_shared_secret_here
+MESSENGER_VERIFY_TOKEN=choose_any_verification_word_here
+ENABLE_TEST_ROUTES=true
 ```
 
-Start Redis:
+`apps/embedding-svc/.env`
 
-```bash
-pnpm redis
+```env
+PORT=5558
+EMBEDDING_MODEL=intfloat/multilingual-e5-small
+EMBEDDING_SERVICE_SECRET=choose_any_shared_secret_here
 ```
 
-Run database migrations:
-
-```bash
-pnpm --filter api prisma:migrate
-```
-
-Start the web app, API, and worker:
-
-```bash
-pnpm dev
-```
-
-Local URLs:
-
-| Service | URL |
-| --- | --- |
-| Web app | http://localhost:5555 |
-| API | http://localhost:5556 |
-| Queue dashboard | http://localhost:5556/admin/queues |
-
----
-
-## How Processing Works
-
-1. The user uploads a book.
-2. The API saves the file in `uploads/`.
-3. A `BookJob` record is created in SQLite.
-4. The job is added to the Redis/BullMQ queue.
-5. The worker extracts plain text from the file.
-6. The text is normalized and split into chunks.
-7. Each chunk is corrected by LLM using strict tool calls.
-8. Each corrected chunk is saved as soon as it finishes.
-9. A warning scan checks for political, adult/sexual, and BL content.
-10. The worker creates `final.txt` and `final.docx` in `outputs/{jobId}/`.
-
-Job statuses:
-
-```txt
-UPLOADED -> EXTRACTING -> SPLITTING -> PROCESSING -> GENERATING_OUTPUT -> COMPLETED
-```
-
-If some chunks fail but others succeed, the job can finish as:
-
-```txt
-PARTIALLY_COMPLETED
-```
-
-If the whole job fails, the status becomes:
-
-```txt
-FAILED
-```
+`EMBEDDING_SERVICE_SECRET` must be exactly the same word in both `apps/chatbot/.env` and `apps/embedding-svc/.env`.
 
 ---
 
 ## Production Deployment With PM2
 
-These steps assume one Linux server running the web app, API, worker, Redis, and SQLite database.
+These steps assume one Linux server running both apps, Redis, Postgres, and the embedding service.
 
 ### 1. Get The Code
 
-Clone or copy the project to your server:
-
 ```bash
-git clone <your-repo-url> project-folder
+git clone https://github.com/your-org/acra.git project-folder
 cd project-folder
 ```
 
@@ -201,135 +256,99 @@ git pull
 pnpm install --frozen-lockfile
 ```
 
-If this is your first deploy and the lockfile is not final yet, use:
-
-```bash
-pnpm install
-```
-
 ### 3. Create Environment Files
 
-Create:
+Create all four files listed in [Environment Files, Quick Reference](#environment-files-quick-reference) above, using real production values. Make sure `DEEPSEEK_API_KEY` is set before starting.
 
-```txt
-apps/api/.env
-apps/web/.env.local
-```
-
-Use the examples from the Environment Files section above.
-
-Make sure `DEEPSEEK_API_KEY` is set before starting production.
-
-### 4. Start Redis
-
-Using Docker Compose:
+### 4. Set Up The Embedding Service's Python Environment
 
 ```bash
-pnpm redis
+cd apps/embedding-svc
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+cd ../..
 ```
 
-Check Redis is running:
+### 5. Start Redis And Postgres
 
 ```bash
+pnpm infra
 docker ps
 ```
 
-You should see a container named:
+You should see `book-editor-redis` and `chatbot-postgres` running.
 
-```txt
-book-editor-redis
-```
-
-### 5. Prepare The Database
-
-Run migrations:
+### 6. Prepare Both Databases
 
 ```bash
-pnpm --filter api prisma:migrate
+pnpm setup
 ```
 
-This creates or updates the SQLite database used by the API.
-
-### 6. Build The Web App
+### 7. Build The Web App
 
 ```bash
 pnpm build
 ```
 
-This builds the Next.js app inside `apps/web`.
-
-### 7. Start Everything With PM2
+### 8. Start Everything With PM2
 
 ```bash
 pnpm pm2:start
 ```
 
-PM2 starts three processes:
+PM2 starts these processes:
 
-| PM2 process | Purpose |
-| --- | --- |
-| `book-api` | Express API on port `5556` |
-| `book-worker` | Background book processing worker |
-| `book-web` | Next.js web app on port `5555` |
+| PM2 process | Purpose | Port |
+| --- | --- | --- |
+| `book-api` | Book Editor API | `5556` |
+| `book-worker` | Book Editor background worker | none, internal |
+| `book-web` | Book Editor website | `5555` |
+| `chatbot-api` | Chatbot API and webhook | `5557` |
+| `chatbot-worker` | Chatbot live reply worker | none, internal |
+| `chatbot-ingest-worker` | Chatbot historical data worker | none, internal |
+| `chatbot-embed` | Embedding service | `5558` |
 
-### 8. Save The PM2 Process List
+### 9. Save The PM2 Process List
 
-This lets PM2 restore the app after a server reboot:
+This lets PM2 bring everything back automatically after a server reboot.
 
 ```bash
 pm2 save
-```
-
-Then enable PM2 startup:
-
-```bash
 pm2 startup
 ```
 
-PM2 will print a command. Copy and run that command once.
+`pm2 startup` prints one command near the end. Copy and run that command once.
 
-### 9. Check Production Status
+### 10. Check Production Status
 
 ```bash
 pnpm pm2:status
-```
-
-View logs:
-
-```bash
 pnpm pm2:logs
 ```
 
-View only one process:
+View one process at a time:
 
 ```bash
-pm2 logs book-api
-pm2 logs book-worker
-pm2 logs book-web
+pm2 logs chatbot-api
+pm2 logs chatbot-worker
+pm2 logs chatbot-ingest-worker
 ```
 
 ---
 
 ## Updating Production
 
-Use this flow when deploying new code:
-
 ```bash
 cd project-folder
 git pull
 pnpm install --frozen-lockfile
-pnpm --filter api prisma:migrate
+pnpm setup
 pnpm build
 pnpm pm2:restart
 ```
 
-If the app is already running and you want a smoother restart:
-
-```bash
-pnpm pm2:reload
-```
-
-If PM2 process definitions changed, use:
+If PM2 process definitions themselves changed:
 
 ```bash
 pnpm pm2:delete
@@ -339,31 +358,9 @@ pm2 save
 
 ---
 
-## Stopping Production
-
-Stop all app processes:
-
-```bash
-pnpm pm2:stop
-```
-
-Start them again:
-
-```bash
-pnpm pm2:start
-```
-
-Remove them from PM2:
-
-```bash
-pnpm pm2:delete
-```
-
----
-
 ## Reverse Proxy
 
-In production, put Nginx, Caddy, Cloudflare Tunnel, or another reverse proxy in front of the app.
+In production, put [Nginx](https://nginx.org/), [Caddy](https://caddyserver.com/), or [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) in front of both apps, using real domain names instead of ngrok.
 
 Typical setup:
 
@@ -371,25 +368,10 @@ Typical setup:
 | --- | --- |
 | `/` | `http://localhost:5555` |
 | `/api/*` | `http://localhost:5556` |
-| `/admin/queues` | `http://localhost:5556/admin/queues` |
+| Chatbot's `/webhook` | `http://localhost:5557/webhook` |
+| Chatbot's `/api/*` and `/docs` | `http://localhost:5557` |
 
-For safety, protect `/admin/queues` with authentication or block it from the public internet.
-
----
-
-## Important Production Folders
-
-These folders contain real user data:
-
-```txt
-uploads/
-outputs/
-apps/api/prisma/dev.db
-```
-
-Back them up if you need to preserve jobs and generated files.
-
-Do not delete these folders during deployment unless you intentionally want to remove uploaded books, generated outputs, and job history.
+The chatbot's webhook address must be a stable, permanent domain in production, since Meta stores it and will not follow a changing ngrok address the way local development does.
 
 ---
 
@@ -403,239 +385,54 @@ uploads/
 outputs/
 apps/api/.env
 apps/web/.env.local
+apps/chatbot/.env
+apps/embedding-svc/.env
 ```
 
-Simple manual backup example:
+The chatbot's own database lives inside the `chatbot-postgres` Docker volume, and should be backed up using Postgres's own backup tool:
 
 ```bash
-mkdir -p backups
-tar -czf backups/book-editor-backup-$(date +%Y-%m-%d).tar.gz apps/api/prisma/dev.db uploads outputs apps/api/.env apps/web/.env.local
+docker exec chatbot-postgres pg_dump -U chatbot chatbot > backups/chatbot-backup-$(date +%Y-%m-%d).sql
 ```
-
----
-
-## API Endpoints
-
-Interactive API documentation is available when the API is running:
-
-```txt
-http://localhost:5556/docs
-http://localhost:5556/openapi.json
-```
-
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `POST` | `/api/upload` | Upload a book and create a job |
-| `GET` | `/api/jobs` | List jobs |
-| `GET` | `/api/jobs/:id` | Get job status and logs |
-| `GET` | `/api/jobs/:id/preview` | Get completed chunks for live preview |
-| `GET` | `/api/jobs/:id/result` | Get final output file URLs |
-| `GET` | `/api/files/:id/final.txt` | Download corrected text |
-| `GET` | `/api/files/:id/final.docx` | Download corrected Word document |
-| `POST` | `/api/jobs/:id/retry` | Retry failed chunks |
-| `DELETE` | `/api/jobs` | Clear all jobs, queue data, uploads, and outputs |
-
----
-
-## Adding A New API Endpoint
-
-This section explains the API docs system in simple terms.
-
-Think of one endpoint like one shop counter:
-
-1. The route file is the counter where the work happens.
-2. The validation schema checks what the visitor gives you.
-3. The response schema describes what you give back.
-4. The OpenAPI file writes the public guide.
-5. Scalar shows that guide at `/docs`.
-
-### Files You Usually Touch
-
-| Need | File |
-| --- | --- |
-| Add the real Express route | `apps/api/src/routes/*.routes.js` |
-| Validate request params, headers, or body | `apps/api/src/validation/schemas.js` |
-| Describe the JSON response | `apps/api/src/validation/response-schemas.js` |
-| Register schemas for docs generation | `apps/api/src/openapi-components.js` |
-| Add the endpoint to API docs | `apps/api/src/openapi.js` |
-| Mount a brand-new route group | `apps/api/src/server.js` |
-
-Most small changes only need the route file, validation files, `openapi-components.js`, and `openapi.js`.
-
-### Simple Flow
-
-Use this checklist when adding a new endpoint.
-
-1. Add the route handler.
-
-Example:
-
-```js
-router.get("/summary", async (req, res) => {
-  const payload = { message: "API summary" };
-  sendJson(res, messageResponseSchema, payload, "summary response");
-});
-```
-
-2. If the endpoint has inputs, add a request schema.
-
-Examples of inputs:
-
-- `:jobId` in a URL
-- query strings like `?page=1`
-- headers like `X-Docs-Dry-Run`
-- JSON body fields
-
-Request schemas live here:
-
-```txt
-apps/api/src/validation/schemas.js
-```
-
-3. Add a response schema.
-
-Every JSON response should have a matching Zod schema here:
-
-```txt
-apps/api/src/validation/response-schemas.js
-```
-
-Keep descriptions simple. Write them for a new teammate, not only for the original developer.
-
-4. Register the schema for automatic docs.
-
-Add the new schema to:
-
-```txt
-apps/api/src/openapi-components.js
-```
-
-This is the bridge between Zod and OpenAPI. If a schema is not registered here, it will not appear as a reusable schema in `/openapi.json`.
-
-5. Add the endpoint to the OpenAPI paths.
-
-Add the public endpoint description here:
-
-```txt
-apps/api/src/openapi.js
-```
-
-This is where you write:
-
-- endpoint summary
-- endpoint description
-- request body docs
-- response examples
-- status codes
-
-6. Restart the API and check the docs.
-
-```bash
-pnpm --filter api start
-```
-
-Open:
-
-```txt
-http://localhost:5556/docs
-http://localhost:5556/openapi.json
-```
-
-### How Auto Docs Work
-
-The docs are partly automatic and partly hand-written.
-
-Automatic:
-
-- Zod schemas describe data shapes.
-- `openapi-components.js` turns those Zod schemas into OpenAPI schemas.
-- `/openapi.json` includes those generated schemas.
-- Scalar reads `/openapi.json` and shows the UI at `/docs`.
-
-Hand-written:
-
-- Endpoint summaries
-- Endpoint descriptions
-- Request examples
-- Response examples
-- Upload/file download explanations
-
-This is intentional. Data shapes should come from code, but human guidance should be written clearly by a developer.
-
-### Safe Response Validation
-
-Routes can use `sendJson`:
-
-```js
-sendJson(res, someResponseSchema, payload, "some response");
-```
-
-In development, this checks that the response matches the schema and logs a warning if it does not.
-
-In production, it sends the response normally so the frontend is not blocked by docs validation.
-
-### If You Add A New Route File
-
-If you create a new route file, for example:
-
-```txt
-apps/api/src/routes/reports.routes.js
-```
-
-mount it in:
-
-```txt
-apps/api/src/server.js
-```
-
-Example:
-
-```js
-const reportsRoutes = require("./routes/reports.routes");
-app.use("/api/reports", reportsRoutes);
-```
-
-Then add the same endpoint paths to `apps/api/src/openapi.js`.
-
-### Important Rule
-
-Do not only add the Express route.
-
-For every new public JSON endpoint, also add:
-
-- request validation if it accepts input
-- response schema
-- OpenAPI docs
-- example response
-
-That keeps the API, frontend, and documentation easy to trust.
 
 ---
 
 ## Useful Commands
 
-Development:
+Start everything for local development:
 
 ```bash
-pnpm dev
+pnpm dev:all
 ```
 
-Start only the API:
+Start only the Book Editor:
 
 ```bash
 pnpm dev:api
-```
-
-Start only the worker:
-
-```bash
 pnpm dev:worker
+pnpm dev:web
 ```
 
-Start only the web app:
+Start only the Chatbot:
 
 ```bash
-pnpm dev:web
+pnpm dev:chatbot
+pnpm dev:chatbot-worker
+pnpm dev:chatbot-ingest-worker
+pnpm dev:embed
+```
+
+Open Prisma Studio, a visual database browser:
+
+```bash
+pnpm prisma:studio
+pnpm prisma:studio:chatbot
+```
+
+Create demo data for the Chatbot, useful for trying out the [test chat page](http://localhost:5557/test-chat.html) without any real Facebook setup:
+
+```bash
+pnpm chatbot:seed
 ```
 
 Format code:
@@ -644,93 +441,25 @@ Format code:
 pnpm format
 ```
 
-Open Prisma Studio:
-
-```bash
-pnpm prisma:studio
-```
-
-Reset the database in development only:
-
-```bash
-pnpm prisma:clear
-```
-
 ---
 
 ## Troubleshooting
 
-### Upload works but processing does not start
+This section covers the most common issues. For the full troubleshooting list for each app, see [docs/book-editor.md](docs/book-editor.md#troubleshooting) and [docs/chatbot.md](docs/chatbot.md#troubleshooting).
 
-Check Redis:
+**Book Editor upload works but processing does not start.** Check Redis is running with `docker ps`, then check the worker's own logs, `pm2 logs book-worker`.
 
-```bash
-docker ps
-```
+**Chatbot receives no reply after a real Messenger message.** Confirm the Page itself is subscribed to your app, the single most commonly missed step, explained fully in [docs/chatbot.md](docs/chatbot.md#connecting-a-real-facebook-page).
 
-Check the worker logs:
+**DeepSeek errors appear in either app's logs.** Check `DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL`, and `DEEPSEEK_MODEL` in the relevant `.env` file.
 
-```bash
-pm2 logs book-worker
-```
-
-### DeepSeek errors appear in worker logs
-
-Check:
-
-- `DEEPSEEK_API_KEY`
-- `DEEPSEEK_BASE_URL=https://api.deepseek.com/beta`
-- `DEEPSEEK_MODEL=deepseek-v4-flash`
-- `DEEPSEEK_MAX_OUTPUT_TOKENS`
-
-If chunks are too large, reduce:
-
-```env
-MAX_CHUNK_SIZE=12000
-```
-
-### Final files are missing
-
-Check the job status:
-
-```bash
-pm2 logs book-worker
-```
-
-Also check that the `outputs/` folder exists and the app can write to it.
-
-### Web app cannot reach API
-
-Check `apps/web/.env.local`:
-
-```env
-NEXT_PUBLIC_API_BASE_URL=http://localhost:5556
-API_INTERNAL_URL=http://localhost:5556
-```
-
-Then rebuild and restart:
-
-```bash
-pnpm build
-pnpm pm2:restart
-```
-
-### PM2 starts web app but page is old
-
-Rebuild the web app:
-
-```bash
-pnpm build
-pnpm pm2:restart
-```
+**Embedding service will not start.** Make sure its Python virtual environment was created and its dependencies were installed, and confirm `EMBEDDING_SERVICE_SECRET` matches between `apps/chatbot/.env` and `apps/embedding-svc/.env`.
 
 ---
 
 ## Notes
 
-- Server environment variables control AI behavior.
-- Browser users only upload books and download results.
-- Redis must be running before the API and worker process jobs.
-- SQLite is simple and fine for a single-server deployment.
-- For multiple servers, move the database and file storage to shared production services.
-
+* All AI behavior, including model choice and safety settings, is controlled on the server through environment variables. Browser users never choose or change AI settings directly.
+* Redis must be running before either app's worker can process jobs.
+* Postgres must be running before the Chatbot can start.
+* One Client's knowledge base is kept in its own isolated section of the database, so one company's data is never mixed into another company's chatbot replies.
