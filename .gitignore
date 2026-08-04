@@ -20,6 +20,14 @@ apps/web/.next/
 apps/api/prisma/*.db
 apps/api/prisma/*.db-journal
 
+# Generated Prisma clients (per-app output, see schema.prisma comments)
+apps/*/prisma/generated/
+
 # Generated outputs / uploads (local storage)
 uploads/
 outputs/
+
+# Python (embedding service)
+venv/
+__pycache__/
+*.pyc
