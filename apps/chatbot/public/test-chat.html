@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Chatbot test harness</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; color: #1a1a1a; }
+  h1 { font-size: 18px; }
+  .row { display: flex; gap: 8px; margin-bottom: 12px; }
+  input, button { font-size: 14px; padding: 8px; }
+  #clientId { flex: 1; }
+  #psid { width: 140px; }
+  #log { border: 1px solid #ddd; border-radius: 6px; padding: 12px; min-height: 300px; margin-bottom: 12px; }
+  .msg { margin-bottom: 10px; }
+  .msg .role { font-weight: 600; font-size: 12px; text-transform: uppercase; color: #888; }
+  .msg .text { white-space: pre-wrap; }
+  .meta { font-size: 12px; color: #888; margin-top: 2px; }
+  .chunks { font-size: 12px; color: #555; margin-top: 4px; }
+  .chunks summary { cursor: pointer; }
+  #inputRow input { flex: 1; }
+  .error { color: #b00020; }
+</style>
+</head>
+<body>
+  <h1>Chatbot RAG test harness (local only)</h1>
+  <div class="row">
+    <input id="clientId" placeholder="clientId (from seed script or /api/clients)" />
+    <input id="psid" placeholder="psid" value="test-user-1" />
+  </div>
+  <div id="log"></div>
+  <div class="row" id="inputRow">
+    <input id="text" placeholder="Type a message and press Enter" />
+    <button id="send">Send</button>
+  </div>
+
+  <script src="/test-chat.js"></script>
+</body>
+</html>

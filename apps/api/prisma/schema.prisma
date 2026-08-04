@@ -1,5 +1,10 @@
 generator client {
   provider = "prisma-client-js"
+  // pnpm hoists identical @prisma/client versions across workspace packages, so without
+  // a distinct per-app output path, this schema and apps/chatbot/prisma/schema.prisma
+  // would both generate into the same node_modules/@prisma/client location and silently
+  // overwrite each other's client on every `prisma generate`.
+  output   = "./generated/prisma-client"
 }
 
 datasource db {

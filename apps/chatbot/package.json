@@ -1,0 +1,37 @@
+{
+  "name": "chatbot",
+  "version": "1.0.0",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "nodemon src/server.js",
+    "worker": "nodemon src/queues/message.worker.js",
+    "ingest-worker": "nodemon src/queues/ingest.worker.js",
+    "start": "node src/server.js",
+    "start:worker": "node src/queues/message.worker.js",
+    "start:ingest-worker": "node src/queues/ingest.worker.js",
+    "backfill": "node src/cli/backfill.js",
+    "pull-conversations": "node src/cli/pull-conversations.js",
+    "seed": "node src/cli/seed.js",
+    "prisma:migrate": "prisma migrate deploy",
+    "prisma:studio": "prisma studio",
+    "prisma:reset": "prisma migrate reset --force"
+  },
+  "dependencies": {
+    "@prisma/client": "^5",
+    "@scalar/express-api-reference": "latest",
+    "bullmq": "latest",
+    "compression": "latest",
+    "cors": "latest",
+    "deepseek-client": "workspace:*",
+    "dotenv": "latest",
+    "express": "latest",
+    "helmet": "latest",
+    "ioredis": "latest",
+    "prisma": "^5",
+    "stream-chain": "^2.2.5",
+    "stream-json": "^1.9.1"
+  },
+  "devDependencies": {
+    "nodemon": "latest"
+  }
+}

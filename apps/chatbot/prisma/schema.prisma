@@ -1,0 +1,148 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+  // See the matching comment in apps/api/prisma/schema.prisma — without a distinct
+  // per-app output path, this would silently overwrite (or be overwritten by) the book
+  // editor's generated Prisma client since pnpm hoists identical @prisma/client versions.
+  output          = "./generated/prisma-client"
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("CHATBOT_DATABASE_URL")
+  extensions = [vector]
+}
+
+// One row per Facebook Page / Messenger bot the company hosts for a client.
+// Every retrieval and every knowledge chunk is scoped to a clientId — this is
+// the tenant boundary that must never be crossed.
+model Client {
+  id              String   @id @default(cuid())
+  name            String
+  facebookPageId  String   @unique
+  pageAccessToken String
+  appSecret       String
+  systemPrompt    String
+  embeddingModel  String   @default("intfloat/multilingual-e5-small")
+  status          String   @default("ACTIVE") // ACTIVE | PAUSED
+
+  knowledgeChunks     KnowledgeChunk[]
+  conversationSessions ConversationSession[]
+  ingestionBatches    IngestionBatch[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Curated Q&A knowledge extracted from historical conversations (see docs/rag-chatbot-plan.md §2).
+// The embedding column is declared Unsupported because Prisma has no native vector type;
+// all reads/writes of `embedding` go through src/db/vector.js raw SQL, not Prisma Client.
+// The underlying table is partitioned BY LIST (clientId) with a per-partition HNSW index —
+// see prisma/migrations/<ts>_pgvector_partitions/migration.sql.
+model KnowledgeChunk {
+  id                String   @id @default(cuid())
+  clientId          String
+  question          String
+  answer            String
+  category          String?
+  language          String?
+  sourceEpisodeId   String?
+  extractionVersion Int      @default(1)
+  status            String   @default("PENDING_EMBED") // PENDING_EMBED | READY | DUPLICATE
+  duplicateOfId     String?
+  embedding         Unsupported("vector(384)")?
+
+  client         Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  sourceEpisode  ConversationEpisode? @relation(fields: [sourceEpisodeId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // clientId is included because "KnowledgeChunk" is partitioned BY LIST (clientId) —
+  // Postgres requires every unique index on a partitioned table to include the partition
+  // key, so the migration's unique index is 4 columns, not 3. Keep this in sync with it.
+  @@unique([sourceEpisodeId, extractionVersion, question, clientId])
+  @@index([clientId, status])
+}
+
+// Live/short-term state for one ongoing Messenger conversation (one per clientId+psid).
+model ConversationSession {
+  id            String   @id @default(cuid())
+  clientId      String
+  psid          String // Facebook page-scoped user id
+  status        String   @default("ACTIVE") // ACTIVE | ESCALATED | CLOSED
+  lastMessageAt DateTime @default(now())
+
+  client   Client               @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  messages ConversationMessage[]
+
+  createdAt DateTime @default(now())
+
+  @@unique([clientId, psid])
+}
+
+model ConversationMessage {
+  id                String   @id @default(cuid())
+  sessionId         String
+  role              String // user | assistant
+  content           String
+  retrievedChunkIds Json? // audit trail of which KnowledgeChunk rows fed this reply
+  mid               String? @unique // Meta's message id, used for webhook-redelivery dedup
+
+  session ConversationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+}
+
+// --- Ingestion staging tables (docs/rag-chatbot-plan.md §2) ---
+
+model IngestionBatch {
+  id        String   @id @default(cuid())
+  clientId  String
+  filePath  String
+  status    String   @default("UPLOADED") // UPLOADED | PARSING | SEGMENTING | CURATING | EMBEDDING | COMPLETED | FAILED
+  errorMessage String?
+  // Atomically incremented once per episode as curation finishes for it, regardless of how
+  // many (if any) KnowledgeChunk rows that episode produced. Needed because an episode that
+  // yields zero reusable Q&A never enqueues an embed job, so it wouldn't otherwise trigger
+  // batch completion the way a normal chunk-producing episode does (see ingest.worker.js).
+  curatedEpisodes Int @default(0)
+
+  client         Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  rawMessages    RawMessage[]
+  episodes       ConversationEpisode[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model RawMessage {
+  id           String   @id @default(cuid())
+  batchId      String
+  threadId     String
+  senderName   String
+  isFromClient Boolean // true if the page/bot sent it, false if the Messenger user sent it
+  content      String
+  timestampMs  BigInt
+  episodeId    String?
+
+  batch   IngestionBatch       @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  episode ConversationEpisode? @relation(fields: [episodeId], references: [id])
+
+  @@unique([batchId, threadId, timestampMs, senderName])
+  @@index([episodeId])
+}
+
+model ConversationEpisode {
+  id      String @id @default(cuid())
+  batchId String
+  threadId String
+  startedAt DateTime
+  endedAt   DateTime
+
+  batch    IngestionBatch   @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  messages RawMessage[]
+  chunks   KnowledgeChunk[]
+
+  createdAt DateTime @default(now())
+}

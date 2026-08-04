@@ -35,6 +35,52 @@ module.exports = {
         NODE_ENV: "production",
         PORT: 5555
       }
+    },
+    {
+      name: "chatbot-api",
+      cwd: "./apps/chatbot",
+      script: "src/server.js",
+      instances: 1,
+      autorestart: true,
+      watch: false,
+      env_production: {
+        NODE_ENV: "production",
+        PORT: 5557
+      }
+    },
+    {
+      name: "chatbot-worker",
+      cwd: "./apps/chatbot",
+      script: "src/queues/message.worker.js",
+      instances: 1,
+      autorestart: true,
+      watch: false,
+      env_production: {
+        NODE_ENV: "production"
+      }
+    },
+    {
+      name: "chatbot-ingest-worker",
+      cwd: "./apps/chatbot",
+      script: "src/queues/ingest.worker.js",
+      instances: 1,
+      autorestart: true,
+      watch: false,
+      env_production: {
+        NODE_ENV: "production"
+      }
+    },
+    {
+      name: "chatbot-embed",
+      cwd: "./apps/embedding-svc",
+      script: "server.py",
+      interpreter: "python3",
+      instances: 1,
+      autorestart: true,
+      watch: false,
+      env_production: {
+        PORT: 5558
+      }
     }
   ]
 };
